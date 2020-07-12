@@ -56,16 +56,25 @@ sub sorted_keys {
 
 package main;
 
+sub usage {
+print STDERR <<EOF;
+$0 [--verbose] (--tvshow=tvshow.nfo --episode=Foo_SXXEYY.nfo | --movie=Movie.nfo) [--xml=mkvtags_out.xml] [--mkv=Foo_SXXEYY.mkv]
+	--help           Show this helpmessage
+	--verbose        Be verbose while processing data
+	--tvshow=FILE    Input: The NFO-file for the overall tv-shwo
+	--episode=FILE   Input: The NFO-file for the individual episode
+	--movie=FILE     Input: The NFO-file for the movie file
+	--xml=FILE       Output, optional: The Matroska tags in XML format
+	--mkv=FILE       Output, optional: Apply the tags to this file using mkvpropedit from the MKVToolnix suite
+
+Please note that --movie as opposed to the pair --tvshow and --episode are mutually exclusive.
+--mkv expects mkvpropedit to be in your PATH
+EOF
+exit 1;
+}
+
 # Parse arguments
-my ($tvshownfo, $episodenfo, $movienfo, $mkvfile, $xmlfile);
 my $verbose = '';
-GetOptions( "--tvshow=s"  => \$tvshownfo
-          , "--episode=s" => \$episodenfo
-          , "--movie=s"   => \$movienfo
-          , "--mkv=s"     => \$mkvfile
-          , "--xml=s"     => \$xmlfile
-          , "--verbose!"  => \$verbose
-          );
 
 sub parse_nfo {
 	my ($filename) = @_;
@@ -172,7 +181,9 @@ sub make_actor_tags {
 sub handle_episode {
 	my ($episodenfo, $shownfo) = @_;
 
+	print "Parsing episode NFO\n" if $verbose;
 	my $episodemeta = parse_nfo($episodenfo);
+	print "Parsing TV-show NFO if exists\n" if $verbose;
 	my $showmeta = $shownfo ? parse_nfo($shownfo) : {};
 
 	print "Parsed show metadata:\n" . Dumper($showmeta) . "\n"       if $verbose;
@@ -258,6 +269,8 @@ sub handle_episode {
 sub handle_movie {
 	my ($movienfo) = @_;
 
+	print "Parsing movie NFO\n" if $verbose;
+
 	my $moviemeta = parse_nfo($movienfo);
 
 	print "Parsed movie metadata:\n" . Dumper($showmeta) . "\n"       if $verbose;
@@ -301,32 +314,71 @@ sub handle_movie {
 sub apply_tags_to_file {
 	my ($mkvfile, $tagsfile) = @_;
 
-	system ("mkvpropedit", $mkvfile, "--tags", "all:$tagsfile") == 0
+	my @cmd = ("mkvpropedit", $mkvfile, "--tags", "all:$tagsfile");
+
+	print "Running mkvpropedit: @cmd\n" if $verbose;
+
+	system (@cmd) == 0
 	   	or die "Mkvpropedit failed: $?";
 }
 
 sub main {
-	my $tags = handle_episode($episodenfo, $tvshownfo);
+	# Argument Parsing
+	my ($tvshownfo, $episodenfo, $movienfo, $mkvfile, $xmlfile);
+	my $help = '';
+	GetOptions( "--tvshow=s"  => \$tvshownfo
+			  , "--episode=s" => \$episodenfo
+			  , "--movie=s"   => \$movienfo
+			  , "--mkv=s"     => \$mkvfile
+			  , "--xml=s"     => \$xmlfile
+			  , "--verbose!"  => \$verbose
+			  , "--help!"     => \$help
+			  ) or usage();
+
+	usage() if $help;
+	die("--movie and --episode are mutually exclusive") if $movienfo and $episodenfo;
+	die("Both --tvshow and --episode are required for tagging TV-Shows") if ($tvshownfo || $episodenfo) and !($tvshownfo && $episodenfo);
+	for my $file ($tvshownfo, $episodenfo, $movienfo) {
+		die("NFO-File '$file' does not exist or is not readable by user") if ($file && !(-r $file));
+	}
+	die("MKV file '$mkvfile' does not exist or is not accessible(rw) by user") if ($mkvfile && !(-r $mkvfile and -w $mkvfile));
+	die("One of --episode or --movie is required") unless $movienfo or $episodenfo;
+
+	# Input Parsing
+	my $tags;
+	if ($episodenfo) {
+		$tags = handle_episode($episodenfo, $tvshownfo);
+	} elsif ($movienfo) {
+		$tags = handle_movie($movienfo);
+	} else {
+		die("Internal error: no input nfo found");
+	}
+
+	# Transform tagXML to "string"
+	print "Formatting Tags as XML\n" if $verbose;
 	my $xmldata = format_matroska_xml($tags);
 	print "Formatted XML data:\n" . $xmldata . "\n" if $verbose;
 
-	# Output the xml file, use temporary file if we only have to interact
-	# with mkvtoolnix
-	my $outfile = $xmlfile || File::Temp->new();
-	spew($outfile, $xmldata);
+	# Output handling
+	unless ($xmlfile || $mkvfile) {
+		# No further action: Print to stdout
+		print $xmldata;
+	} else {
+		# Output the xml file, use temporary file if we only have to interact
+		# with mkvtoolnix
+		my $outfile = $xmlfile || File::Temp->new();
+		print "Writing to $outfile\n" if $verbose;
+		spew($outfile, $xmldata);
 
-	if ($mkvfile) {
-		apply_tags_to_file($mkvfile, $outfile);
+		apply_tags_to_file($mkvfile, $outfile) if ($mkvfile);
 	}
+
 }
 
 main();
 
-# TODO: Handle movie nfos
-#       record uniqueid fields (tvdb, imdb, ...)
-#       write xml
-#       apply to mkv with mkvtoolnix
-#       coverimage: --attachment-name "cover" --attachment-mime-type "image/jpeg" --add-attachment "%%~nf.jpg"
+# TODO: - record uniqueid fields (tvdb, imdb, ...)
+#       - coverimage: --attachment-name "cover" --attachment-mime-type "image/jpeg" --add-attachment "%%~nf.jpg"
 #
 #
 #https://www.matroska.org/technical/cover_art/index.html

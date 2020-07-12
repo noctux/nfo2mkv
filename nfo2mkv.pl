@@ -116,7 +116,7 @@ sub format_matroska_xml {
 sub spew {
 	my ($filename, $data) = @_;
 
-	open (my $fh, ">", $filename)
+	open (my $fh, ">encoding(utf8)", $filename)
 		or die "Failed to open file '$filename' for writing";
 	print $fh $data or die "Writing data to file '$filename' failed";
 	close($fh);

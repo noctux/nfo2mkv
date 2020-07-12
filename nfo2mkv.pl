@@ -273,7 +273,7 @@ sub handle_movie {
 
 	my $moviemeta = parse_nfo($movienfo);
 
-	print "Parsed movie metadata:\n" . Dumper($showmeta) . "\n"       if $verbose;
+	print "Parsed movie metadata:\n" . Dumper($moviemeta) . "\n"       if $verbose;
 
 	my %tags = (Tag => [
 		{

@@ -267,7 +267,8 @@ sub handle_episode {
 #    PRODUCTION_STUDIO -> <studio>
 #    LAW_RATING -> <mpaa>
 sub handle_movie {
-	my ($movienfo) = @_;
+	# Partno is used for split movie files (the good old days...)
+	my ($movienfo, $partno) = @_;
 
 	print "Parsing movie NFO\n" if $verbose;
 
@@ -290,6 +291,7 @@ sub handle_movie {
 				TargetTypeValue => 50
 			},
 			Simple => [
+				make_string_tag("PART_NUMBER",       $partno),
 				make_string_tag("TITLE",             $moviemeta->{title}),
 				make_string_tag("ORIGINAL_TITLE",    $moviemeta->{originaltitle}),
 				make_string_tag("SUMMARY",           $moviemeta->{plot} || $moviemeta->{outline}),
@@ -349,7 +351,12 @@ sub main {
 	if ($episodenfo) {
 		$tags = handle_episode($episodenfo, $tvshownfo);
 	} elsif ($movienfo) {
-		$tags = handle_movie($movienfo);
+		my $partno;
+		# Detect: foo_partX.mkv and foo_Part_X_(YYYY).mkv, and extract X
+		if ($mkvfile && $mkvfile =~ /(part|teil|split|dvd|pt|disk|disc)[-_ ]*(?<no>\d+)([-_ ]\(\d{4}\))?.mkv$/) {
+			$partno = $+{no};
+		}
+		$tags = handle_movie($movienfo, $partno);
 	} else {
 		die("Internal error: no input nfo found");
 	}

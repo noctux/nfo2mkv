@@ -186,6 +186,32 @@ sub handle_episode {
 	print "Parsing TV-show NFO if exists\n" if $verbose;
 	my $showmeta = $shownfo ? parse_nfo($shownfo) : {};
 
+	# Look, don't ask. I manages to shoot myself into my own foot using XML::Simple all by myself :P
+	# This is probably why XML::Simple usage is discouraged
+	# If the NFO has a single actor tag, and that in turn consists solely of a Name, e.g.
+	#  <actor>
+	#	<name>Nixus MiniMax</name>
+	#	<role/>
+	#	<thumb/>
+	#	<profile/>
+	#  </actor>
+	# it would otherwise be parsed as {actor => { name => "Nixus Minimax" }}. So we manually patch that instance...
+	my $patch_actors = sub {
+		my ($actors) = @_;
+		if ($actors->{name}) {
+			if (1 == keys %{$actors}) {
+				$actors = { $actors->{name} => {} };
+			} else {
+				my $name = $actors->{name};
+				delete $actors->{name};
+				$actors = { $name => $actors };
+			}
+		}
+		return $actors;
+	};
+	$episodemeta->{actor} = $patch_actors->($episodemeta->{actor} // {});
+	$showmeta->{actor}    = $patch_actors->($showmeta->{actor} // {});
+
 	print "Parsed show metadata:\n" . Dumper($showmeta) . "\n"       if $verbose;
 	print "Parsed episode metadata:\n" . Dumper($episodemeta) . "\n" if $verbose;
 
@@ -193,6 +219,7 @@ sub handle_episode {
 	for my $name (keys %{$episodemeta->{actor}}) {
 		my $data     = $episodemeta->{actor}->{$name};
 		my $showdata = $showmeta->{actor}->{$name};
+
 		# So transfer them...
 		if (!$data->{role} && $showdata->{role}) {
 			$data->{role} = $showdata->{role};
